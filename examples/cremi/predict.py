@@ -3,18 +3,20 @@ import os
 from gunpowder import *
 from gunpowder.caffe import *
 
-def predict():
+def predict(raw_path, out_path, net_folder):
+    assert os.path.exists(raw_path)
+    assert os.path.exists(net_folder)
 
     iteration = 10000
-    prototxt = 'net.prototxt'
-    weights  = 'net_iter_%d.caffemodel'%iteration
+    prototxt = os.path.join(net_folder, 'net.prototxt')
+    weights  = os.path.join('net_iter_%d.caffemodel'%iteration)
 
     input_size = Coordinate((84,268,268))
     output_size = Coordinate((56,56,56))
 
     pipeline = (
             Hdf5Source(
-                    'sample_A_20160501.hdf',
+                    raw_path,
                     raw_dataset='volumes/raw') +
             Normalize() +
             Pad() +
@@ -36,7 +38,7 @@ def predict():
             Snapshot(
                     every=1,
                     output_dir=os.path.join('processed', '%d'%iteration),
-                    output_filename='sample_A_20160501.hdf'
+                    output_filename=out_path
             )
     )
 
@@ -50,5 +52,14 @@ def predict():
                 )
         )
 
+
+def predict_sample(sample):
+    raw_path = '/groups/saalfeld/home/papec/data/mala_jan_original/raw/sample_%s+.hdf' % sample
+    out_path = '/groups/saalfeld/home/papec/data/networks/malaV2_jan/predictions'
+    net_folder = '/groups/saalfeld/home/papec/data/networks/malaV2_jan/sample%s+_predictions.hdf' % sample
+
+    predict(raw_path, out_path, net_folder)
+
+
 if __name__ == "__main__":
-    predict()
+    predict('A')
