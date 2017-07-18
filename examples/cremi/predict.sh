@@ -7,8 +7,13 @@ nvidia-docker rm -f $NAME
 NV_GPU=0 nvidia-docker run --rm \
     -u `id -u $USER` \
     -v $(pwd):/workspace \
+    -v /groups/saalfeld/home/papec:/groups/saalfeld/home/papec \
     -w /workspace \
     --name $NAME \
-    funkey/gunpowder:latest \
+    funkey/gunpowder:v0.2 \
     python -u predict.py
 
+
+# if want to use own gunpowder:
+# export pythonpath with own gunpowder
+# before 
