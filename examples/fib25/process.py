@@ -12,7 +12,7 @@ def predict_affinities(gpu):
     # the learned weights (example at iteration 90000)
     weights  = 'net_iter_90000.caffemodel'
 
-    # input and output sizes of the network (needed to formulate Chunk requests 
+    # input and output sizes of the network (needed to formulate Chunk requests
     # of the correct size later)
     input_size = Coordinate((196,)*3)
     output_size = Coordinate((92,)*3)
@@ -20,7 +20,7 @@ def predict_affinities(gpu):
     # the size of the receptive field of the network
     context = (input_size - output_size)/2
 
-    # a chunk request that matches the dimensions of the network, will be used 
+    # a chunk request that matches the dimensions of the network, will be used
     # to chunk the whole volume into batches of this size
     chunk_request = BatchRequest()
     chunk_request.add_volume_request(VolumeTypes.RAW, input_size)
@@ -39,7 +39,7 @@ def predict_affinities(gpu):
             # ensure RAW is in float in [0,1]
             Normalize() +
 
-            # zero-pad provided RAW to be able to draw batches close to the 
+            # zero-pad provided RAW to be able to draw batches close to the
             # boundary of the available data
             Pad({ VolumeTypes.RAW: (100, 100, 100) }) +
 
@@ -52,7 +52,7 @@ def predict_affinities(gpu):
             # add useful profiling stats to identify bottlenecks
             PrintProfilingStats() +
 
-            # chunk the whole volume into chunk_request sized batches, this node 
+            # chunk the whole volume into chunk_request sized batches, this node
             # requests several batches upstream, passes one downstream
             Chunk(chunk_request) +
 

@@ -13,8 +13,8 @@ def predict(
     assert os.path.exists(net_folder), net_folder
     assert os.path.exists(out_folder), out_folder
 
-    iteration = 200000
-    prototxt = os.path.join(net_folder, 'net_test.prototxt')
+    iteration = 300000
+    prototxt = os.path.join(net_folder, 'net.prototxt')
     assert os.path.exists(prototxt)
     weights  = os.path.join(net_folder, 'net_iter_%d.caffemodel'%iteration)
     assert os.path.exists(weights), weights
@@ -56,20 +56,16 @@ def predict(
             # normalize raw data
             Normalize() +
 
-            # pad raw data TODO correct padding size
-            Pad({ VolumeTypes.RAW: None }) +
+            # pad raw data
+            Pad({ VolumeTypes.RAW: (100, 100, 100) }) +
 
             # shift to [-1, 1]
             IntensityScaleShift(2, -1) +
 
-            # not used in new prediction script
-            #ZeroOutConstSections() +
+            ZeroOutConstSections() +
 
             # do the actual prediction
             Predict(prototxt, weights, use_gpu=0) +
-
-            # not used in new prediction script
-            #snap1 +
 
             PrintProfilingStats() +
 
@@ -104,9 +100,9 @@ def predict(
 
 def predict_sample(sample):
     raw_path = '/groups/saalfeld/home/papec/Work/data/mala_jan_original/raw/sample_%s+.hdf' % sample
-    out_folder = '/groups/saalfeld/home/papec/Work/data/networks/malaV2_jan/predictions'
+    out_folder = '/groups/saalfeld/home/papec/Work/data/networks/malaV2_cremi/predictions'
     out_name = 'sample_%s+_prediction.hdf' % sample
-    net_folder = '/groups/saalfeld/home/papec/Work/data/networks/malaV2_jan'
+    net_folder = '/groups/saalfeld/home/papec/Work/data/networks/malaV2_cremi'
 
     predict(raw_path, out_folder, out_name, net_folder)
 
