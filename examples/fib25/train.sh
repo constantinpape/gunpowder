@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-rm snapshots/*
-rm net_iter*
+CONTAINER=funkey/gunpowder:v0.3-prerelease
 
 NAME=$(basename "$PWD")
 
@@ -12,11 +11,13 @@ USER_HOME=${HOME}
 
 echo "Starting as user ${USER_ID} with home ${HOME}"
 
+nvidia-docker pull ${CONTAINER}
+
 NV_GPU=1 nvidia-docker run --rm \
     -u ${USER_ID} \
     -e HOME=${USER_HOME} \
     -v ${PWD}:/run \
     -w /run \
     --name ${NAME} \
-    funkey/gunpowder:latest \
-    python -u train.py
+    ${CONTAINER} \
+    python -u train.py 400000 0

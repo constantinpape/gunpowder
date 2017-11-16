@@ -1,8 +1,19 @@
+import copy
 from .coordinate import Coordinate
 from .freezable import Freezable
+import numbers
 
 class Roi(Freezable):
-    '''A rectengular region of interest, defined by an offset and a shape.
+    '''A rectangular region of interest, defined by an offset and a shape.
+
+    Args:
+
+        offset (array-like of int, optional): The starting point (inclusive) of
+            the ROI. Can be `None` (default) if the ROI only characterizes a
+            shape.
+
+        shape (array-like of int, optional): The shape of the ROI. Can be
+            `None` (default) to create an empty ROI.
     '''
 
     def __init__(self, offset=None, shape=None):
@@ -11,13 +22,26 @@ class Roi(Freezable):
         self.freeze()
 
         if self.__offset is not None and self.__shape is not None:
-            assert self.__offset.dims() == self.__shape.dims(), "offset dimension %d != shape dimension %d"%(self.__offset.dims(),self.__shape.dims())
+            assert self.__offset.dims() == self.__shape.dims(), (
+                "offset dimension %d != shape dimension %d"%(
+                    self.__offset.dims(),
+                    self.__shape.dims()))
 
     def set_offset(self, offset):
         self.__offset = Coordinate(offset)
+        if self.__shape is not None:
+            assert self.__offset.dims() == self.__shape.dims(), (
+                "offset dimension %d != shape dimension %d"%(
+                    self.__offset.dims(),
+                    self.__shape.dims()))
 
     def set_shape(self, shape):
         self.__shape = Coordinate(shape)
+        if self.__offset is not None:
+            assert self.__offset.dims() == self.__shape.dims(), (
+                "offset dimension %d != shape dimension %d"%(
+                    self.__offset.dims(),
+                    self.__shape.dims()))
 
     def get_offset(self):
         return self.__offset
@@ -63,6 +87,10 @@ class Roi(Freezable):
             size *= d
         return size
 
+    def empty(self):
+
+        return self.size() == 0
+
     def contains(self, other):
 
         if isinstance(other, Roi):
@@ -96,7 +124,7 @@ class Roi(Freezable):
     def intersect(self, other):
 
         if not self.intersects(other):
-            return None
+            return Roi() # empty ROI
 
         assert self.dims() == other.dims()
 
@@ -155,6 +183,10 @@ class Roi(Freezable):
 
         return Roi(offset, shape)
 
+    def copy(self):
+        '''Create a copy of this ROI.'''
+        return copy.deepcopy(self)
+
     def __add__(self, other):
 
         assert isinstance(other, tuple), "can only add Coordinate or tuples to Roi"
@@ -164,6 +196,26 @@ class Roi(Freezable):
 
         assert isinstance(other, Coordinate), "can only subtract Coordinate from Roi"
         return self.shift(-other)
+
+    def __mul__(self, other):
+
+        assert isinstance(other, tuple) or isinstance(other, numbers.Number), "can only multiply with a number or tuple of numbers"
+        return Roi(self.__offset*other, self.__shape*other)
+
+    def __div__(self, other):
+
+        assert isinstance(other, tuple) or isinstance(other, numbers.Number), "can only divide by a number or tuple of numbers"
+        return Roi(self.__offset/other, self.__shape/other)
+
+    def __truediv__(self, other):
+
+        assert isinstance(other, tuple) or isinstance(other, numbers.Number), "can only divide by a number or tuple of numbers"
+        return Roi(self.__offset/other, self.__shape/other)
+
+    def __floordiv__(self, other):
+
+        assert isinstance(other, tuple) or isinstance(other, numbers.Number), "can only divide by a number or tuple of numbers"
+        return Roi(self.__offset//other, self.__shape//other)
 
     def __eq__(self, other):
 

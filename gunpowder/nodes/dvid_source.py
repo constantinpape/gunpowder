@@ -2,12 +2,13 @@ import distutils.util
 import numpy as np
 import logging
 import requests
+from copy import deepcopy
 
 from .batch_provider import BatchProvider
 from gunpowder.batch import Batch
 from gunpowder.coordinate import Coordinate
 from gunpowder.ext import dvision
-from gunpowder.points import PointsTypes, PointsOfType, SynPoint
+from gunpowder.points import PointsTypes, Points, PreSynPoint, PostSynPoint
 from gunpowder.profiling import Timing
 from gunpowder.provider_spec import ProviderSpec
 from gunpowder.roi import Roi
@@ -25,8 +26,7 @@ class MaskNotProvidedException(Exception):
 class DvidSource(BatchProvider):
 
     def __init__(self, hostname, port, uuid, volume_array_names,
-                 points_array_names={}, points_rois={},
-                 resolution=None):
+                 points_array_names={}, points_rois={}, points_voxel_size=None):
         """
         :param hostname: hostname for DVID server
         :type hostname: str
@@ -35,8 +35,7 @@ class DvidSource(BatchProvider):
         :param uuid: UUID of node on DVID server
         :type uuid: str
         :param volume_array_names: dict {VolumeTypes:  DVID data instance for data in VolumeTypes}
-        :param resolution: resolution of source voxels in nanometers
-        :type resolution: tuple
+        :param points_voxel_size: (dict), :class:``PointsType`` to its voxel_size (tuple)
         """
         self.hostname = hostname
         self.port = port
@@ -47,15 +46,15 @@ class DvidSource(BatchProvider):
 
         self.points_array_names = points_array_names
         self.points_rois        = points_rois
+        self.points_voxel_size  = points_voxel_size
 
-        self.specified_resolution = resolution
         self.node_service = None
         self.dims = 0
         self.spec = ProviderSpec()
 
     def setup(self):
         for volume_type, volume_name in self.volume_array_names.items():
-            self.spec.volumes[volume_type] = self.__get_roi(volume_name)
+            self.spec.volumes[volume_type] = self.__get_roi(volume_name, volume_type.voxel_size)
 
         for points_type, points_name in self.points_array_names.items():
             self.spec.points[points_type] = self.points_rois[points_type]
@@ -65,17 +64,6 @@ class DvidSource(BatchProvider):
     def get_spec(self):
         return self.spec
 
-    @property
-    def resolution(self):
-        if self.specified_resolution is not None:
-            return self.specified_resolution
-        else:
-            fib25_resolution = (8, 8, 8)
-            logger.warning("WARNING: your source does not contain resolution information. "
-                           "I will assume {}. "
-                           "This might not be what you want.".format(fib25_resolution))
-            return fib25_resolution
-
     def provide(self, request):
 
         timing = Timing(self)
@@ -84,7 +72,6 @@ class DvidSource(BatchProvider):
         spec = self.get_spec()
 
         batch = Batch()
-        logger.debug("providing batch with resolution of {}".format(self.resolution))
 
         for (volume_type, roi) in request.volumes.items():
             # check if requested volumetype can be provided
@@ -103,9 +90,7 @@ class DvidSource(BatchProvider):
             logger.debug("Reading %s in %s..."%(volume_type, roi))
             batch.volumes[volume_type] = Volume(
                     read(roi),
-                    roi=roi,
-                    # TODO: get resolution from repository
-                    resolution=self.resolution)
+                    roi=roi)
 
         # if pre and postsynaptic locations requested, their id : SynapseLocation dictionaries should be created
         # together s.t. the ids are unique and allow to find partner locations
@@ -130,7 +115,7 @@ class DvidSource(BatchProvider):
             logger.debug("Reading %s in %s..."%(points_type, roi))
             id_to_point = {PointsTypes.PRESYN: presyn_points,
                            PointsTypes.POSTSYN: postsyn_points}[points_type]
-            batch.points[points_type] = PointsOfType(data=id_to_point, roi=roi, resolution=self.resolution)
+            batch.points[points_type] = Points(data=id_to_point, roi=roi, resolution=self.points_voxel_size[points_type])
 
         logger.debug("done")
 
@@ -139,7 +124,7 @@ class DvidSource(BatchProvider):
 
         return batch
 
-    def __get_roi(self, array_name):
+    def __get_roi(self, array_name, voxel_size):
         data_instance = dvision.DVIDDataInstance(self.hostname, self.port, self.uuid, array_name)
         info = data_instance.info
         roi_min = info['Extended']['MinPoint']
@@ -149,10 +134,10 @@ class DvidSource(BatchProvider):
         if roi_max is not None:
             roi_max = Coordinate(roi_max[::-1])
 
-        return Roi(offset=roi_min, shape=roi_max - roi_min)
+        return Roi(offset=roi_min*voxel_size, shape=(roi_max - roi_min)*voxel_size)
 
     def __read_raw(self, roi):
-        slices = roi.get_bounding_box()
+        slices = (roi/VolumeTypes.RAW.voxel_size).get_bounding_box()
         data_instance = dvision.DVIDDataInstance(self.hostname, self.port, self.uuid, self.volume_array_names[VolumeTypes.RAW])  # self.raw_array_name)
         try:
             return data_instance[slices]
@@ -162,7 +147,7 @@ class DvidSource(BatchProvider):
             raise DvidSourceReadException(msg)
 
     def __read_gt(self, roi):
-        slices = roi.get_bounding_box()
+        slices = (roi/VolumeTypes.GT_LABELS.voxel_size).get_bounding_box()
         data_instance = dvision.DVIDDataInstance(self.hostname, self.port, self.uuid, self.volume_array_names[VolumeTypes.GT_LABELS])  # self.gt_array_name)
         try:
             return data_instance[slices]
@@ -178,7 +163,7 @@ class DvidSource(BatchProvider):
         """
         if self.gt_mask_roi_name is None:
             raise MaskNotProvidedException
-        slices = roi.get_bounding_box()
+        slices = (roi/VolumeTypes.GT_MASK.voxel_size).get_bounding_box()
         dvid_roi = dvision.DVIDRegionOfInterest(self.hostname, self.port, self.uuid, self.volume_array_names[VolumeTypes.GT_MASK])  # self.gt_mask_roi_name)
         try:
             return dvid_roi[slices]
@@ -187,10 +172,10 @@ class DvidSource(BatchProvider):
             msg = "Failure reading GT mask at slices {} with {}".format(slices, repr(self))
             raise DvidSourceReadException(msg)
 
-    def __load_json_annotations(self, volume_shape, volume_offset, array_name):
+    def __load_json_annotations(self, volume_shape_voxel, volume_offset_voxel, array_name):
         url = "http://" + str(self.hostname) + ":" + str(self.port)+"/api/node/" + str(self.uuid) + '/' + \
-              str(array_name) + "/elements/{}_{}_{}/{}_{}_{}".format(volume_shape[2], volume_shape[1], volume_shape[0],
-                                                   volume_offset[2], volume_offset[1], volume_offset[0])
+              str(array_name) + "/elements/{}_{}_{}/{}_{}_{}".format(volume_shape_voxel[2], volume_shape_voxel[1], volume_shape_voxel[0],
+                                                   volume_offset_voxel[2], volume_offset_voxel[1], volume_offset_voxel[0])
         annotations_file = requests.get(url)
         json_annotations = annotations_file.json()
         if json_annotations is None:
@@ -199,16 +184,23 @@ class DvidSource(BatchProvider):
         return json_annotations
 
     def __read_syn_points(self, roi):
-        """ read json file from dvid source, in json format to craete a SynPoint for every location given """
-        syn_file_json = self.__load_json_annotations(volume_shape=roi.get_shape(),  volume_offset=roi.get_offset(),
-                                                     array_name= self.points_array_names[PointsTypes.PRESYN])
+        """ read json file from dvid source, in json format to create a PreSynPoint/PostSynPoint for every location given """
+
+        if PointsTypes.PRESYN in self.points_voxel_size:
+            voxel_size = self.points_voxel_size[PointsTypes.PRESYN]
+        elif PointsTypes.POSTSYN in self.points_voxel_size:
+            voxel_size = self.points_voxel_size[PointsTypes.POSTSYN]
+
+        syn_file_json = self.__load_json_annotations(volume_shape_voxel  = roi.get_shape() // voxel_size,
+                                                     volume_offset_voxel = roi.get_offset() // voxel_size,
+                                                     array_name    = self.points_array_names[PointsTypes.PRESYN])
 
         presyn_points_dict, postsyn_points_dict = {}, {}
         location_to_location_id_dict, location_id_to_partner_locations = {}, {}
         for node_nr, node in enumerate(syn_file_json):
             # collect information
             kind        = str(node['Kind'])
-            location    = np.asarray((node['Pos'][2], node['Pos'][1], node['Pos'][0]))
+            location    = np.asarray((node['Pos'][2], node['Pos'][1], node['Pos'][0])) * voxel_size
             location_id = int(node_nr)
             # some synapses are wrongly annotated in dvid source, have 'Tag': null ???, they are skipped
             try:
@@ -220,7 +212,7 @@ class DvidSource(BatchProvider):
             partner_locations = []
             try:
                 for relation in node['Rels']:
-                    partner_locations.append(np.asarray([relation['To'][2], relation['To'][1], relation['To'][0]]))
+                    partner_locations.append((np.asarray([relation['To'][2], relation['To'][1], relation['To'][0]]))*voxel_size)
             except:
                 partner_locations = []
             location_id_to_partner_locations[int(node_nr)] = partner_locations
@@ -239,12 +231,14 @@ class DvidSource(BatchProvider):
                 props['multi']  = bool(distutils.util.strtobool(str_value_multi))
 
             # create synPoint with information collected so far (partner_ids not completed yet)
-            syn_point = SynPoint(kind=kind, location=location, location_id=location_id,
-                                    synapse_id=syn_id, partner_ids=[], props=props)
             if kind == 'PreSyn':
-                presyn_points_dict[int(node_nr)] = syn_point.get_copy()
+                syn_point = PreSynPoint(location=location, location_id=location_id,
+                                     synapse_id=syn_id, partner_ids=[], props=props)
+                presyn_points_dict[int(node_nr)] = deepcopy(syn_point)
             elif kind == 'PostSyn':
-                postsyn_points_dict[int(node_nr)] = syn_point.get_copy()
+                syn_point = PostSynPoint(location=location, location_id=location_id,
+                                     synapse_id=syn_id, partner_ids=[], props=props)
+                postsyn_points_dict[int(node_nr)] = deepcopy(syn_point)
 
         # add partner ids
         last_node_nr = len(syn_file_json)-1
