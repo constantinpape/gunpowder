@@ -36,7 +36,8 @@ class Hdf5WriteTestSource(BatchProvider):
                     range(roi_voxel.get_begin()[0], roi_voxel.get_end()[0]),
                     range(roi_voxel.get_begin()[1], roi_voxel.get_end()[1]),
                     range(roi_voxel.get_begin()[2], roi_voxel.get_end()[2]), indexing='ij')
-            data = meshgrids[0] + meshgrids[1] + meshgrids[2]
+            data = np.array(meshgrids)
+            print(data.shape)
 
             # print("Roi is: " + str(roi))
 
@@ -57,7 +58,13 @@ class TestHdf5Write(ProviderTest):
         chunk_request.add(VolumeTypes.RAW, (400,30,34))
         chunk_request.add(VolumeTypes.GT_LABELS, (200,10,14))
 
-        pipeline = source + Hdf5Write({VolumeTypes.RAW: 'volumes/raw'}, output_filename='hdf5_write_test.hdf') + Chunk(chunk_request)
+        pipeline = (
+            source +
+            Hdf5Write({
+                VolumeTypes.RAW: 'volumes/raw'
+            },
+            output_filename='hdf5_write_test.hdf') +
+            Scan(chunk_request))
 
         with build(pipeline):
 
@@ -82,7 +89,7 @@ class TestHdf5Write(ProviderTest):
             stored_raw = np.array(ds)
 
             self.assertEqual(
-                stored_raw.shape,
+                stored_raw.shape[-3:],
                 batch_raw.spec.roi.get_shape()//batch_raw.spec.voxel_size)
             self.assertEqual(tuple(ds.attrs['offset']), batch_raw.spec.roi.get_offset())
             self.assertEqual(tuple(ds.attrs['resolution']), batch_raw.spec.voxel_size)

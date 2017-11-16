@@ -1,6 +1,7 @@
 from .freezable import Freezable
 from copy import deepcopy
 from gunpowder.coordinate import Coordinate
+from gunpowder.roi import Roi
 import logging
 import numpy as np
 
@@ -12,8 +13,8 @@ class VolumeType(Freezable):
     Args:
 
         identifier (string):
-            A human readable identifier for this volume type. Will be used as a 
-            static attribute in :class:`VolumeTypes`. Should be upper case (like 
+            A human readable identifier for this volume type. Will be used as a
+            static attribute in :class:`VolumeTypes`. Should be upper case (like
             ``RAW``, ``GT_LABELS``).
     '''
 
@@ -42,22 +43,25 @@ class VolumeTypes:
                                            raw volumes
                                            (used in :class:`DefectAugment`).
         ``GT_LABELS``                      Ground-truth object IDs.
-        ``GT_AFFINITIES``                  Ground-truth affinities.
-        ``GT_MASK``                        Binary mask (1-use, 0-don't use) on ground-truth. No 
-                                           assumptions about masked out area (i.e., end of 
+        ``GT_MASK``                        Binary mask (1-use, 0-don't use) on ground-truth. No
+                                           assumptions about masked out area (i.e., end of
                                            ground-truth).
-        ``GT_IGNORE``                      Binary mask (1-use, 0-don't use) on ground-truth. 
-                                           Assumes that transition between 0 and 1 lies on an 
+        ``GT_IGNORE``                      Binary mask (1-use, 0-don't use) on ground-truth.
+                                           Assumes that transition between 0 and 1 lies on an
                                            object boundary.
+        ``GT_AFFINITIES``                  Ground-truth affinities.
+        ``GT_AFFINITIES_MASK``             Binary mask (1-use, 0-don't use) on ground-truth. No
+                                           assumptions about masked out area (i.e., end of
+                                           ground-truth).
         ``PRED_AFFINITIES``                Predicted affinities.
         ``LOSS_SCALE``                     Used for element-wise multiplication with loss for
                                            training.
         ``LOSS_GRADIENT``                  Gradient of the training loss.
         ``GT_BM_PRESYN``                   Ground truth of binary map for presynaptic locations
         ``GT_BM_PRESYN``                   Ground truth of binary map for postsynaptic locations
-        ``GT_MASK_EXCLUSIVEZONE_PRESYN``   ExculsiveZone binary mask (1-use, 
+        ``GT_MASK_EXCLUSIVEZONE_PRESYN``   ExculsiveZone binary mask (1-use,
                                            0-don't use) around presyn locations
-        ``GT_MASK_EXCLUSIVEZONE_POSTSYN``  ExculsiveZone binary mask (1-use, 
+        ``GT_MASK_EXCLUSIVEZONE_POSTSYN``  ExculsiveZone binary mask (1-use,
                                            0-don't use) around postsyn locations
         ``PRED_BM_PRESYN``                 Predicted presynaptic locations
         ``PRED_BM_POSTSYN``                Predicted postsynaptic locations
@@ -74,8 +78,8 @@ def register_volume_type(identifier):
 
             register_volume_type('IDENTIFIER')
 
-    will create a new volume type available as ``VolumeTypes.IDENTIFIER``. 
-    ``VolumeTypes.IDENTIFIER`` can then be used in dictionaries, as it is done 
+    will create a new volume type available as ``VolumeTypes.IDENTIFIER``.
+    ``VolumeTypes.IDENTIFIER`` can then be used in dictionaries, as it is done
     in :class:`BatchRequest` and :class:`ProviderSpec`, for example.
     '''
     volume_type = VolumeType(identifier)
@@ -86,6 +90,7 @@ register_volume_type('RAW')
 register_volume_type('ALPHA_MASK')
 register_volume_type('GT_LABELS')
 register_volume_type('GT_AFFINITIES')
+register_volume_type('GT_AFFINITIES_MASK')
 register_volume_type('GT_MASK')
 register_volume_type('GT_IGNORE')
 register_volume_type('PRED_AFFINITIES')
@@ -107,11 +112,24 @@ register_volume_type('LOSS_SCALE_BM_POSTSYN')
 
 
 class Volume(Freezable):
+    '''Represents a volume as an array and a :class:`Roi`.
 
-    def __init__(self, data, spec=None):
+    Args:
+
+        data (array-like): The data to be stored in the volume. Will be
+            converted to an numpy array, if necessary.
+
+        spec (:class:`VolumeSpec`, optional): A spec describing the data.
+    '''
+
+    def __init__(self, data, spec=None, attrs=None):
 
         self.spec = deepcopy(spec)
-        self.data = data
+        self.data = np.asarray(data)
+        self.attrs = attrs
+
+        if attrs is None:
+            self.attrs = {}
 
         if spec is not None:
             for d in range(len(spec.voxel_size)):
@@ -130,7 +148,8 @@ class Volume(Freezable):
             copy(bool): Make a copy of the data (default).
         '''
 
-        assert self.spec.roi.contains(roi)
+        assert self.spec.roi.contains(roi), "Requested crop ROI (%s) doesn't fit in volume (%s)"\
+        %(roi, self.spec.roi)
 
         voxel_size = self.spec.voxel_size
         data_roi = (roi - self.spec.roi.get_offset())/voxel_size
@@ -144,5 +163,6 @@ class Volume(Freezable):
             data = np.array(data)
 
         spec = deepcopy(self.spec)
+        attrs = deepcopy(self.attrs)
         spec.roi = deepcopy(roi)
-        return Volume(data, spec)
+        return Volume(data, spec, attrs)

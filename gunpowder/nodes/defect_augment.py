@@ -207,6 +207,9 @@ class DefectAugment(BatchFilter):
                     section, (flow_y, flow_x), mode='constant', order=interpolation
                 ).reshape(shape)
 
+                # things can get smaller than 0 at the boundary, so we clip
+                section = np.clip(section, 0., 1.)
+
                 # zero-out data below the line mask
                 section[line_mask] = 0.
 
@@ -253,8 +256,7 @@ class DefectAugment(BatchFilter):
         normal_vector[0] = - line_vector[1]
         normal_vector[1] = line_vector[0]
 
-        # make meshgrid
-        x, y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
+        x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
         # generate the vector field
         flow_x, flow_y = np.zeros(shape), np.zeros(shape)
 
