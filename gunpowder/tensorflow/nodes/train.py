@@ -8,6 +8,7 @@ from gunpowder.array import ArrayKey, Array
 
 logger = logging.getLogger(__name__)
 
+
 class Train(GenericTrain):
     '''Tensorflow implementation of :class:`gunpowder.nodes.Train`.
 
